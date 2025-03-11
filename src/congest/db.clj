@@ -4,10 +4,9 @@
 
 (def ^:private db-config {:dbtype "sqlite"
                           :dbname (:dbname config/env)})
-(defn- create-db []
-  db-config)
 
-(defn- create-data-source [db]
-  (jdbc/get-datasource db))
+(defprotocol Database)
 
-(create-data-source (create-db))
+(defn create-db-connection []
+  (let [ds (jdbc/get-datasource db-config)]
+    (reify Database)))
