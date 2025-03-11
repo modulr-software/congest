@@ -24,5 +24,6 @@
     (@*server)
     (reset! *server nil)))
 
-(defn restart-server! [] (stop-server!)
+(defn restart-server! []
+  (stop-server!)
   (start-server!))
