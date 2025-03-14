@@ -6,7 +6,7 @@
   (println "in -wrapper")
   (fn []
     (let [metadata (get-in @*the-atom [job-id])]
-      (println "value? " (some? metadata))
+      (println "value? " metadata)
       (handler metadata)
       (println "stop function? " (some? (:stop metadata))))))
 
@@ -25,25 +25,27 @@
     (at/after (:interval opts) handler pool)))
 
 (defn- -register! [*jobs pool handler opts]
-  (let [id (:id opts)]
-    (swap!
-     *jobs
-     assoc
-     id
-     {:stop (-start-job
-             pool
-             (-wrapper *jobs handler id)
-             opts)})))
+  (let [id (:id opts)
+        stop (-start-job
+              pool
+              (-wrapper *jobs handler id)
+              opts)]
+    (->> (assoc opts :stop stop)
+         (swap!
+          *jobs
+          assoc
+          id))))
 
-(defn- -deregister! [*jobs pool job-id])
+(defn- -deregister! [*jobs job-id])
 
 (defn- -stop! [*jobs job-id kill?]
-  (cond
-    kill?
-    (at/kill (get-in @*jobs [job-id :stop]))
+  (let [{:keys [stop id]} (get-in @*jobs [job-id])]
+    (cond
+      kill?
+      (at/kill stop)
 
-    :else
-    (at/stop ())))
+      :else
+      (at/stop stop))))
 
 (defn- -read-jobs [ctx])
 
@@ -52,8 +54,7 @@
   (apply f args)
   (println "lo something after"))
 
-(dlog "running action blah blah blah" create-jobs [{}])
-*
+
 ;; if recurring then kill-after is a number
 ;; if not recurring then kill-after is a boolean
 (defn- -start-jobs-pool [jobs-pool *jobs list-of-jobs-metadata]
@@ -70,7 +71,7 @@
 (defprotocol Jobs
   (register! [this handler opts])
   (deregister! [this job-id])
-  (stop! [this job-id])
+  (stop! [this job-id kill?])
   (read-jobs [this]))
 
 (defn create-jobs [initial-data]
@@ -82,66 +83,19 @@
       (register! [_ handler opts]
         (-register! *jobs job-pool handler opts))
       (deregister! [_ job-id]
-        (-deregister! *jobs job-pool job-id))
-      (stop! [_ job-id]
-        (-stop! *jobs job-pool job-id)))))
-
-;; START UP AND SHUT DOWN HOOKS 
-;; Read colleciton of jobs and stop them all
-(defn stop-all-jobs [jobs])
-
-;; Read jobs from  and returns a new cron job service instance?
-(defn read-jobs [])
-
-;; Takes a cron job service and start all dormant jobs
-(defn start-all-jobs [*jobs])
-
-;; JOB REGISTER AND DE-REGISTER SERVICES 
-;; Register a job to the cron service and start it
-(defn- -register-job! [jobs handler & opts]
-  (let [auto-start (or (:auto-start opts) true)]))
-
-;; Deregister and stop a job from the cron service
-(defn- -deregister-job [jobs job-id])
-
-;; Stop a job
-(defn- -stop-job [jobs job-id])
-
-;; for a given job the meta data we need is:
-;; its id
-;; should it auto start (only necessary to know when the job is registered?)
-;; should it be running or not
-;; is it recurring?
-;; what is its interval
-;; should it execute its handler at start or a certain time after start
-(defn handler [request]
-  (println request))
-
+        (-deregister! *jobs job-id))
+      (stop! [_ job-id kill?]
+        (-stop! *jobs job-id kill?)))))
 
 (comment
-  (let [*the-atom (atom {}) job-id "test-id" job-pool (at/mk-pool)]
-    (swap!
-     *the-atom
-     assoc
-     job-id
-     {:stop (at/after 1 (wrapper *the-atom handler job-id) job-pool
-                      :name "My Name")})
-    (Thread/sleep 1000)
-    (at/shutdown-pool!
-     @(:pool-atom job-pool)
-     :kill))
-  (let [job-pool (at/mk-pool)]
-    (at/every 1 (fn [request] (println "thing")) job-pool)
-    (at/shutdown-pool! @(:pool-atom job-pool) :kill)))
-
-(comment
-  (create-jobs
-   [{:interval 5000
-     :handler (fn [metadata] (println "PING"))
-     :recurring? true
-     :kill-after nil
-     :stop-after-fail false
-     :auto-start true
-     :sleep false
-     :initial-delay 1000
-     :id "test"}]))
+  (def js (create-jobs
+           [{:interval 5000
+             :handler (fn [metadata] (println "PING"))
+             :recurring? true
+             :kill-after nil
+             :stop-after-fail false
+             :auto-start true
+             :sleep false
+             :initial-delay 1000
+             :id "test"}]))
+  (stop! js "test" false))
