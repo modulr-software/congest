@@ -2,13 +2,8 @@
   (:require
    [overtone.at-at :as at]))
 
-(defn- -wrapper [*the-atom handler job-id]
-  (println "in -wrapper")
-  (fn []
-    (let [metadata (get-in @*the-atom [job-id])]
-      (println "value? " metadata)
-      (handler metadata)
-      (println "stop function? " (some? (:stop metadata))))))
+(defn- -get-time []
+  (.getTime (new java.util.Date)))
 
 (defn- -start-job [pool handler opts]
   (cond
@@ -24,22 +19,9 @@
     :else
     (at/after (:interval opts) handler pool)))
 
-(defn- -register! [*jobs pool handler opts]
-  (let [id (:id opts)
-        stop (-start-job
-              pool
-              (-wrapper *jobs handler id)
-              opts)]
-    (->> (assoc opts :stop stop)
-         (swap!
-          *jobs
-          assoc
-          id))))
-
-(defn- -deregister! [*jobs job-id])
-
 (defn- -stop! [*jobs job-id kill?]
-  (let [{:keys [stop id]} (get-in @*jobs [job-id])]
+  (let [{:keys [stop]} (get-in @*jobs [job-id])]
+    (println "Stopping job: " job-id)
     (cond
       kill?
       (at/kill stop)
@@ -47,7 +29,57 @@
       :else
       (at/stop stop))))
 
-(defn- -read-jobs [ctx])
+(defn- -deregister! [*jobs job-id]
+  (-stop! *jobs job-id true)
+  (swap! *jobs dissoc job-id))
+
+(defn- -deregister-recurring-job? [metadata]
+  (let [kill-after (:kill-after metadata)]
+    (cond (some? kill-after)
+          (< (+ kill-after (:created-at metadata)) (-get-time))
+
+          :else
+          false)))
+
+(defn- -deregister-job? [metadata]
+  (cond (:recurring? metadata)
+        (-deregister-recurring-job? metadata)
+
+        :else
+        false))
+
+(defn- -wrapper-internal [*jobs handler metadata]
+  (handler metadata)
+  (when (not (:recurring? metadata))
+    (-deregister! *jobs (:id metadata))))
+
+(defn- -wrapper [*jobs handler job-id]
+  (fn []
+    (let [metadata (get-in @*jobs [job-id])]
+      (cond (not (-deregister-job? metadata))
+            (-wrapper-internal *jobs handler metadata)
+
+            :else
+            (-deregister! *jobs job-id)))))
+
+(defn- -register! [*jobs pool opts]
+  (let [id (:id opts)
+        exists? (some? (get-in @*jobs [id]))]
+    (cond exists?
+          nil
+
+          :else
+          (->> (-start-job
+                pool
+                (-wrapper *jobs (:handler opts) id)
+                opts)
+               (assoc opts :created-at (-get-time) :stop)
+               (swap!
+                *jobs
+                assoc
+                id)))))
+
+(defn- -read-jobs [*jobs])
 
 (defn dlog [message f & args]
   (println "log something beforehand:" message)
@@ -60,7 +92,7 @@
 (defn- -start-jobs-pool [jobs-pool *jobs list-of-jobs-metadata]
   (println list-of-jobs-metadata)
   (run! (fn [job-metadata]
-          (-register! *jobs jobs-pool (:handler job-metadata) job-metadata))
+          (-register! *jobs jobs-pool job-metadata))
         (or list-of-jobs-metadata []))
   jobs-pool)
 
@@ -69,10 +101,11 @@
        (-start-jobs-pool *jobs list-of-jobs-metadata)))
 
 (defprotocol Jobs
-  (register! [this handler opts])
+  (register! [this opts])
   (deregister! [this job-id])
   (stop! [this job-id kill?])
-  (read-jobs [this]))
+  (read-jobs [this])
+  (kill [this]))
 
 (defn create-jobs [initial-data]
   (let [*jobs (atom {})
@@ -80,22 +113,26 @@
                   *jobs
                   initial-data)]
     (reify Jobs
-      (register! [_ handler opts]
-        (-register! *jobs job-pool handler opts))
+      (register! [_ opts]
+        (-register! *jobs job-pool opts))
       (deregister! [_ job-id]
         (-deregister! *jobs job-id))
       (stop! [_ job-id kill?]
-        (-stop! *jobs job-id kill?)))))
+        (-stop! *jobs job-id kill?))
+      (kill [_]
+        (at/stop-and-reset-pool! job-pool :strategy :kill)))))
 
 (comment
   (def js (create-jobs
            [{:interval 5000
              :handler (fn [metadata] (println "PING"))
-             :recurring? true
-             :kill-after nil
+             :recurring? false
+             :created-at nil
+             :kill-after 2000
              :stop-after-fail false
              :auto-start true
              :sleep false
              :initial-delay 1000
              :id "test"}]))
-  (stop! js "test" false))
+  (stop! js "test" false)
+  (kill js))
