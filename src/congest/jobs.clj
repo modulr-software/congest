@@ -30,13 +30,18 @@
       (at/stop stop))))
 
 (defn- -deregister! [*jobs job-id]
-  (-stop! *jobs job-id true)
-  (swap! *jobs dissoc job-id))
+  (cond
+    (some? (get-in @*jobs [job-id]))
+    (do (-stop! *jobs job-id true)
+        (swap! *jobs dissoc job-id))
+
+    :else
+    false))
 
 (defn- -deregister-recurring-job? [metadata]
   (let [kill-after (:kill-after metadata)]
     (cond (some? kill-after)
-          (< (+ kill-after (:created-at metadata)) (-get-time))
+          (>= (:num-calls metadata) kill-after)
 
           :else
           false)))
@@ -46,38 +51,34 @@
         (-deregister-recurring-job? metadata)
 
         :else
-        false))
+        true))
 
 (defn- -wrapper-internal [*jobs handler metadata]
   (handler metadata)
-  (when (not (:recurring? metadata))
-    (-deregister! *jobs (:id metadata))))
+  (when (:recurring? metadata)
+    (swap! *jobs assoc
+           (:id metadata)
+           (assoc
+            metadata
+            :num-calls
+            (inc (:num-calls metadata))))))
 
 (defn- -wrapper [*jobs handler job-id]
   (fn []
     (let [metadata (get-in @*jobs [job-id])]
-      (cond (not (-deregister-job? metadata))
-            (-wrapper-internal *jobs handler metadata)
-
-            :else
-            (-deregister! *jobs job-id)))))
+      (-wrapper-internal *jobs handler metadata)
+      (when (-deregister-job? metadata)
+        (-deregister! *jobs job-id)))))
 
 (defn- -register! [*jobs pool opts]
-  (let [id (:id opts)
-        exists? (some? (get-in @*jobs [id]))]
-    (cond exists?
-          nil
-
-          :else
-          (->> (-start-job
-                pool
-                (-wrapper *jobs (:handler opts) id)
-                opts)
-               (assoc opts :created-at (-get-time) :stop)
-               (swap!
-                *jobs
-                assoc
-                id)))))
+  (let [id (:id opts)]
+    (when-not (some? (get-in @*jobs [id]))
+      (->> (-start-job
+            pool
+            (-wrapper *jobs (:handler opts) id)
+            opts)
+           (assoc opts :created-at (-get-time) :stop)
+           (swap! *jobs assoc id)))))
 
 (defn- -read-jobs [*jobs])
 
@@ -132,6 +133,7 @@
              :stop-after-fail false
              :auto-start true
              :sleep false
+             :num-calls nil
              :initial-delay 1000
              :id "test"}]))
   (stop! js "test" false)
