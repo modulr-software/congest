@@ -41,7 +41,7 @@
 (defn- -deregister-recurring-job? [metadata]
   (let [kill-after (:kill-after metadata)]
     (cond (some? kill-after)
-          (>= (:num-calls metadata) kill-after)
+          (>= (if-some [num-calls (:num-calls metadata)] num-calls 0) kill-after)
 
           :else
           false)))
@@ -55,13 +55,16 @@
 
 (defn- -wrapper-internal [*jobs handler metadata]
   (handler metadata)
+  (println "metadata in wrapper internal: " metadata)
   (when (:recurring? metadata)
     (swap! *jobs assoc
            (:id metadata)
            (assoc
             metadata
             :num-calls
-            (inc (:num-calls metadata))))))
+            (if-some [num-calls (:num-calls metadata)]
+              (inc num-calls)
+              1)))))
 
 (defn- -wrapper [*jobs handler job-id]
   (fn []
@@ -125,16 +128,21 @@
 
 (comment
   (def js (create-jobs
-           [{:interval 5000
-             :handler (fn [metadata] (println "PING"))
-             :recurring? false
-             :created-at nil
-             :kill-after 2000
-             :stop-after-fail false
-             :auto-start true
-             :sleep false
-             :num-calls nil
-             :initial-delay 1000
-             :id "test"}]))
+           [{:initial-delay 1000,
+             :auto-start true,
+             :stop-after-fail false,
+             :id "test",
+             :kill-after 2000,
+             :num-calls 0,
+             :interval 1000,
+             :recurring? true,
+             :created-at nil,
+             :handler (fn [metadata] (println "PING")),
+             :sleep false}]))
+  (stop! js "test" false)
+  (kill js)
+
+  (def initial-data (load-file "./resources/test/jobs/initial-data/initial-data-0.clj"))
+  (def js (create-jobs initial-data))
   (stop! js "test" false)
   (kill js))
