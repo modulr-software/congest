@@ -19,15 +19,29 @@
     :else
     (at/after (:interval opts) handler pool)))
 
+(defn- -stop-job-handler [pool handler opts]
+  (let [stop (-start-job pool handler opts)]
+    (fn
+      ([]
+       (println "stopping job")
+       (at/stop stop))
+
+      ([kill?]
+       (println "stopping job")
+       (if kill?
+         (at/kill stop)
+
+         (at/stop stop))))))
+
 (defn- -stop! [*jobs job-id kill?]
   (let [{:keys [stop]} (get-in @*jobs [job-id])]
     (println "Stopping job: " job-id)
     (cond
       kill?
-      (at/kill stop)
+      (stop true)
 
       :else
-      (at/stop stop))))
+      (stop false))))
 
 (defn- -deregister! [*jobs job-id]
   (cond
@@ -38,52 +52,77 @@
     :else
     false))
 
-(defn- -deregister-recurring-job? [metadata]
-  (let [kill-after (:kill-after metadata)]
-    (cond (some? kill-after)
-          (>= (if-some [num-calls (:num-calls metadata)] num-calls 0) kill-after)
+(defn- -handle-with-retries
+  ([job]
+   (-handle-with-retries job 0))
 
-          :else
-          false)))
+  ([job tries]
+   (let [handler (:handler job)
+         max-retries (:max-retries job)
+         event (handler job)]
+     (if (and (< tries (or max-retries 0))
+              (= event :fail))
+       (-handle-with-retries job
+                             (inc tries))
 
-(defn- -deregister-job? [metadata]
-  (cond (:recurring? metadata)
-        (-deregister-recurring-job? metadata)
+       (assoc job :event (or event :success)))))) ;; if event is nil then we default to success
+
+(defmulti -maybe-deregister (fn [job] (:recurring? job)))
+
+(defmethod -maybe-deregister true [{:keys [stop-after-fail?
+                                           stop
+                                           kill-after] :as job}]
+  (cond (= (:event job) :fail)
+        (if (and (some? stop-after-fail?) (not stop-after-fail?))
+          (assoc job :num-fails (inc (or (:num-fails job) 1)))
+
+          (do
+            (stop)
+            nil))
+
+        (and (some? kill-after) (>= (or (:num-calls job) 1) kill-after))
+        (do
+          (println (:num-calls job))
+          (stop)
+          nil)
 
         :else
-        true))
+        job))
 
-(defn- -wrapper-internal [*jobs handler metadata]
-  (handler metadata)
-  (println "metadata in wrapper internal: " metadata)
-  (when (:recurring? metadata)
-    (swap! *jobs assoc
-           (:id metadata)
-           (assoc
-            metadata
-            :num-calls
-            (if-some [num-calls (:num-calls metadata)]
-              (inc num-calls)
-              1)))))
+(defmethod -maybe-deregister false []
+  nil)
 
-(defn- -wrapper [*jobs handler job-id]
+(defn- -increase-calls [job]
+  (when (some? job)
+    (assoc job :num-calls (inc (or (:num-calls job) 1)))))
+
+(defn- -post-run-cleanup [job]
+  (when (some? job)
+    (dissoc job :event)))
+
+(defn- -run-job [job]
+  (->> job
+       (-handle-with-retries)
+       (-maybe-deregister)
+       (-increase-calls)
+       (-post-run-cleanup)))
+
+(defn- -wrapper [*jobs job-id]
   (fn []
-    (let [metadata (get-in @*jobs [job-id])]
-      (-wrapper-internal *jobs handler metadata)
-      (when (-deregister-job? metadata)
-        (-deregister! *jobs job-id)))))
+    (->> (get-in @*jobs [job-id])
+         (-run-job)
+         (swap! *jobs assoc job-id))))
 
 (defn- -register! [*jobs pool opts]
   (let [id (:id opts)]
     (when-not (some? (get-in @*jobs [id]))
-      (->> (-start-job
+      (->> (-stop-job-handler
             pool
-            (-wrapper *jobs (:handler opts) id)
+            (-wrapper *jobs id)
             opts)
            (assoc opts :created-at (-get-time) :stop)
-           (swap! *jobs assoc id)))))
-
-(defn- -read-jobs [*jobs])
+           (swap! *jobs assoc id))))
+  (println "Job has been registered"))
 
 (defn dlog [message f & args]
   (println "log something beforehand:" message)
@@ -94,7 +133,6 @@
 ;; if recurring then kill-after is a number
 ;; if not recurring then kill-after is a boolean
 (defn- -start-jobs-pool [jobs-pool *jobs list-of-jobs-metadata]
-  (println list-of-jobs-metadata)
   (run! (fn [job-metadata]
           (-register! *jobs jobs-pool job-metadata))
         (or list-of-jobs-metadata []))
@@ -127,22 +165,19 @@
         (at/stop-and-reset-pool! job-pool :strategy :kill)))))
 
 (comment
-  (def js (create-jobs
-           [{:initial-delay 1000,
-             :auto-start true,
-             :stop-after-fail false,
-             :id "test",
-             :kill-after 2000,
-             :num-calls 0,
-             :interval 1000,
-             :recurring? true,
-             :created-at nil,
-             :handler (fn [metadata] (println "PING")),
-             :sleep false}]))
-  (stop! js "test" false)
-  (kill js)
+  (def initial-data-1 [])
+  (def initial-data-2 [{:initial-delay 10
+                        :auto-start true
+                        :stop-after-fail false,
+                        :id "test"
+                        :kill-after 1
+                        :num-calls nil
+                        :interval 1000
+                        :recurring? true
+                        :created-at nil
+                        :handler (fn [metadata] (println "RUN"))
+                        :sleep false}])
 
-  (def initial-data (load-file "./resources/test/jobs/initial-data/initial-data-0.clj"))
-  (def js (create-jobs initial-data))
+  (def js (create-jobs initial-data-2))
   (stop! js "test" false)
   (kill js))
