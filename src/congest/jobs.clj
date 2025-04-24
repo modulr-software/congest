@@ -124,12 +124,6 @@
            (swap! *jobs assoc id))))
   (println "Job has been registered"))
 
-(defn dlog [message f & args]
-  (println "log something beforehand:" message)
-  (apply f args)
-  (println "lo something after"))
-
-
 ;; if recurring then kill-after is a number
 ;; if not recurring then kill-after is a boolean
 (defn- -start-jobs-pool [jobs-pool *jobs list-of-jobs-metadata]
