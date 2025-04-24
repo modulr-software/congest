@@ -41,13 +41,10 @@
       (stop false))))
 
 (defn- -deregister! [*jobs job-id]
-  (cond
-    (some? (get-in @*jobs [job-id]))
-    (do (-stop! *jobs job-id true)
-        (swap! *jobs dissoc job-id))
-
-    :else
-    false))
+  (when
+   (some? (get-in @*jobs [job-id]))
+    (-stop! *jobs job-id true)
+    (swap! *jobs dissoc job-id)))
 
 (defn- -handle-with-retries
   ([job]
