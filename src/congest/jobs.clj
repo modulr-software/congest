@@ -15,7 +15,7 @@
      handler
      pool
      :initial-delay
-     (:initial-delay opts))
+     (max (:initial-delay opts) 100)) ;; set the minimum initial delay to 100
 
     :else
     (at/after (:interval opts) handler pool)))
