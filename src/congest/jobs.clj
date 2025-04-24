@@ -7,9 +7,9 @@
   (.getTime (new java.util.Date)))
 
 (defn- -start-job [pool handler opts]
-  (cond
-    ;; test with initial delay nil
-    (:recurring? opts)
+  (if
+   ;; test with initial delay nil
+   (:recurring? opts)
     (at/every
      (:interval opts)
      handler
@@ -17,10 +17,9 @@
      :initial-delay
      (max (:initial-delay opts) 100)) ;; set the minimum initial delay to 100
 
-    :else
     (at/after (:interval opts) handler pool)))
 
-(defn- -stop-job-handler [pool handler opts]
+(defn- -create-stop [pool handler opts]
   (let [stop (-start-job pool handler opts)]
     (fn
       ([]
@@ -33,11 +32,10 @@
 
 (defn- -stop! [*jobs job-id kill?]
   (let [{:keys [stop]} (get-in @*jobs [job-id])]
-    (cond
-      kill?
+    (if
+     kill?
       (stop true)
 
-      :else
       (stop false))))
 
 (defn- -deregister! [*jobs job-id]
@@ -68,15 +66,15 @@
                                            kill-after] :as job}]
   (cond (= (:event job) :fail)
         (if (and (some? stop-after-fail?) (not stop-after-fail?))
-          (assoc job :num-fails (inc (or (:num-fails job) 1)))
+          (assoc job :num-fails (inc (or (:num-fails job) 0)))
 
           (do
             (stop)
             nil))
 
-        (and (some? kill-after) (>= (or (:num-calls job) 1) kill-after))
+        ;; kill-after with a value of 0 should never exist
+        (and (some? kill-after) (>= (or (:num-calls job) 0) kill-after))
         (do
-          (println (:num-calls job))
           (stop)
           nil)
 
@@ -107,19 +105,15 @@
          (-run-job)
          (swap! *jobs assoc job-id))))
 
-(defn- -register! [*jobs pool opts]
-  (let [id (:id opts)]
-    (when-not (some? (get-in @*jobs [id]))
-      (->> (-stop-job-handler
-            pool
-            (-wrapper *jobs id)
-            opts)
-           (assoc opts :created-at (-get-time) :stop)
-           (swap! *jobs assoc id))))
-  (println "Job has been registered"))
+(defn- -register! [*jobs pool {:keys [id] :as opts}]
+  (when-not (some? (get-in @*jobs [id]))
+    (->> (-create-stop
+          pool
+          (-wrapper *jobs id)
+          opts)
+         (assoc opts :created-at (-get-time) :stop)
+         (swap! *jobs assoc id))))
 
-;; if recurring then kill-after is a number
-;; if not recurring then kill-after is a boolean
 (defn- -start-jobs-pool [jobs-pool *jobs list-of-jobs-metadata]
   (run! (fn [job-metadata]
           (-register! *jobs jobs-pool job-metadata))
@@ -134,10 +128,9 @@
   (register! [this opts])
   (deregister! [this job-id])
   (stop! [this job-id kill?])
-  (read-jobs [this])
-  (kill [this]))
+  (read-jobs [this]))
 
-(defn create-jobs [initial-data]
+(defn create-job-service [initial-data]
   (let [*jobs (atom {})
         job-pool (-create-and-start-jobs-pool
                   *jobs
@@ -166,6 +159,5 @@
                         :handler (fn [metadata] (println "RUN"))
                         :sleep false}])
 
-  (def js (create-jobs initial-data-2))
-  (stop! js "test" false)
-  (kill js))
+  (def js (create-job-service initial-data-2))
+  (stop! js "test" false))
