@@ -1,6 +1,7 @@
 (ns congest.jobs
   (:require
-   [overtone.at-at :as at]))
+   [overtone.at-at :as at]
+   [congest.util :as util]))
 
 (defn- -get-time []
   (.getTime (new java.util.Date)))
@@ -23,19 +24,15 @@
   (let [stop (-start-job pool handler opts)]
     (fn
       ([]
-       (println "stopping job")
-       (at/stop stop))
+       (util/dlog "Stopping job" at/stop stop)) ;; Log message before stopping the job
 
       ([kill?]
-       (println "stopping job")
        (if kill?
-         (at/kill stop)
-
-         (at/stop stop))))))
+         (util/dlog "Killing job" at/kill stop) ;; Log message before killing the job
+         (util/dlog "Stopping job" at/stop stop)))))) ;; Log message before stopping the job
 
 (defn- -stop! [*jobs job-id kill?]
   (let [{:keys [stop]} (get-in @*jobs [job-id])]
-    (println "Stopping job: " job-id)
     (cond
       kill?
       (stop true)
