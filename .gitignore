@@ -13,3 +13,4 @@ dev/dev.clj
 *.sql
 .clj-kondo/
 .lsp/
+nrepl.sh
