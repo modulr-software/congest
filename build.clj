@@ -12,13 +12,20 @@
 
 (defn jar [_]
   (clean nil)
-  (b/copy-dir {:src-dirs ["src"] 
+  (b/copy-dir {:src-dirs ["src"]
                :target-dir class-dir})
   (b/jar {:class-dir class-dir
           :jar-file jar-file
           :basis basis
           :lib lib
-          :version version}))
+          :version version
+          :pom-data {:group (namespace lib)
+                     :artifact (name lib)
+                     :version version
+                     :description "congest"
+                     :url "https://github.com/modulr-software/congest"
+                     :licenses [{:name "MIT"
+                                 :url "https://opensource.org/licenses/MIT"}]}}))
 
 (defn install [_]
   (b/install {:basis basis
