@@ -1,10 +1,14 @@
 (ns congest.jobs
-  (:require
-   [overtone.at-at :as at]
-   [congest.util :as util]))
+  (:require [overtone.at-at :as at]
+            [congest.logging :as logging])
+  (:import (java.text SimpleDateFormat)))
 
 (defn- -get-time []
   (.getTime (new java.util.Date)))
+
+(defn get-formatted-time []
+  (let [formatter (SimpleDateFormat. "yyyy-MM-dd HH:mm:ss")]
+    (.format formatter (-get-time))))
 
 (defn- -start-job [pool handler opts]
   (if
@@ -19,16 +23,19 @@
 
     (at/after (:interval opts) handler pool)))
 
-(defn- -create-stop [pool handler opts]
+(defn- -create-stop [pool handler {:keys [logger] :or {logger (logging/->DefaultLogger)} :as opts}]
   (let [stop (-start-job pool handler opts)]
     (fn
       ([]
-       (util/dlog "Stopping job" at/stop stop)) ;; Log message before stopping the job
+       (logging/log-info! logger "Stopping job")
+       (at/stop stop)) ;; Log message before stopping the job
 
       ([kill?]
        (if kill?
-         (util/dlog "Killing job" at/kill stop) ;; Log message before killing the job
-         (util/dlog "Stopping job" at/stop stop)))))) ;; Log message before stopping the job
+         (do (logging/log-info! logger "Killing job")
+             (at/kill at/kill stop)) ;; Log message before killing the job
+         (do (logging/log-info! logger "Stopping job")
+             (at/stop stop))))))) ;; Log message before stopping the job
 
 (defn- -stop! [*jobs job-id kill?]
   (let [{:keys [stop]} (get-in @*jobs [job-id])]
@@ -128,7 +135,7 @@
   (register! [this opts])
   (deregister! [this job-id])
   (stop! [this job-id kill?])
-  (read-jobs [this]))
+  (kill [this]))
 
 (defn create-job-service [initial-data]
   (let [*jobs (atom {})
@@ -146,6 +153,8 @@
         (at/stop-and-reset-pool! job-pool :strategy :kill)))))
 
 (comment
+  (get-formatted-time)
+
   (def initial-data-1 [])
   (def initial-data-2 [{:initial-delay 10
                         :auto-start true
