@@ -1,5 +1,6 @@
 (ns build
-  (:require [clojure.tools.build.api :as b]))
+  (:require [clojure.tools.build.api :as b]
+            [deps-deploy.deps-deploy :as dd]))
 
 (def lib 'com.modulr-software/congest)
 (def version "0.1.0")
@@ -18,14 +19,7 @@
           :jar-file jar-file
           :basis basis
           :lib lib
-          :version version
-          :pom-data {:group (namespace lib)
-                     :artifact (name lib)
-                     :version version
-                     :description "congest"
-                     :url "https://github.com/modulr-software/congest"
-                     :licenses [{:name "MIT"
-                                 :url "https://opensource.org/licenses/MIT"}]}}))
+          :version version}))
 
 (defn install [_]
   (b/install {:basis basis
@@ -33,3 +27,10 @@
               :version version
               :jar-file jar-file
               :class-dir class-dir}))
+
+(defn deploy [_]
+  (dd/deploy {:artifact jar-file
+              :pom-file "pom.xml"
+              :repo "clojars"
+              :username (System/getenv "CLOJARS_USERNAME")
+              :password (System/getenv "CLOJARS_PASSWORD")}))
