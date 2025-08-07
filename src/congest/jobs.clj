@@ -64,20 +64,25 @@
   ([opts job]
    (-handle-with-retries opts job 0))
 
-  ([{:keys [logger id] :or {logger (logging/->DefaultLogger)}} job tries]
+  ([{:keys [logger id] :or {logger (logging/->DefaultLogger)} :as opts} job tries]
    (let [handler (:handler job)
          max-retries (or (:max-retries job) 0)
          _ (logging/log-info! logger (str "Attempting to run job-id '" id "': attempt " (inc tries) " of " (inc max-retries) "..."))
          event (handler job)]
      (if (and (< tries max-retries)
+              (> max-retries 0)
               (= event :fail))
        (do
          (logging/log-error! logger (str "Attempt " (inc tries) " of " (inc max-retries) " running job-id '" id "' failed."))
-         (-handle-with-retries job
+         (-handle-with-retries opts job
                                (inc tries)))
-       (do
-         (logging/log-info! logger (str "Attempt " (inc tries) " of " (inc max-retries) " running job-id '" id "' succeeded."))
-         (assoc job :event (or event :success))))))) ;; if event is nil then we default to success
+       (if (= event :fail)
+         (do
+           (logging/log-error! logger (str "Attempt " (inc tries) " of " (inc max-retries) " running job-id '" id "' failed."))
+           (assoc job :event :fail))
+         (do
+           (logging/log-info! logger (str "Attempt " (inc tries) " of " (inc max-retries) " running job-id '" id "' succeeded."))
+           (assoc job :event (or event :success)))))))) ;; if event is nil then we default to success
 
 (defmulti -maybe-deregister (fn [job] (:recurring? job)))
 
@@ -178,7 +183,7 @@
                         :interval 1000
                         :recurring? true
                         :created-at nil
-                        :handler (fn [metadata] (println "RUN"))
+                        :handler (fn [metadata] (println "RUN") :fail)
                         :sleep false}])
 
   (def js (create-job-service initial-data-2))
