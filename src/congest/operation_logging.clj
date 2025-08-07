@@ -1,4 +1,4 @@
-(ns congest.logging
+(ns congest.operation-logging
   (:require [congest.jobs :refer [get-formatted-time]]))
 
 (defprotocol Logger

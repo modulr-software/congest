@@ -1,6 +1,6 @@
 (ns congest.jobs
   (:require [overtone.at-at :as at]
-            [congest.logging :as logging])
+            [congest.operation-logging :as logging])
   (:import (java.text SimpleDateFormat)))
 
 (defn- -get-time []
@@ -10,31 +10,40 @@
   (let [formatter (SimpleDateFormat. "yyyy-MM-dd HH:mm:ss")]
     (.format formatter (-get-time))))
 
-(defn- -start-job [pool handler opts]
+(defn- -start-job
+  [pool handler {:keys [logger recurring? interval initial-delay id] :or {logger (logging/->DefaultLogger)} :as _opts}]
   (if
    ;; test with initial delay nil
-   (:recurring? opts)
-    (at/every
-     (:interval opts)
-     handler
-     pool
-     :initial-delay
-     (max (:initial-delay opts) 100)) ;; set the minimum initial delay to 100
+   recurring?
+    (do
+      (logging/log-info!
+       logger
+       (str "Starting recurring job with job-id '" id "' with " interval "ms interval and " initial-delay "ms delay."))
+      (at/every
+       interval
+       handler
+       pool
+       :initial-delay
+       (max initial-delay 100))) ;; set the minimum initial delay to 100
 
-    (at/after (:interval opts) handler pool)))
+    (do
+      (logging/log-info!
+       logger
+       (str "Starting non-recurring job with job-id '" id "' with " interval "ms delay."))
+      (at/after interval handler pool))))
 
-(defn- -create-stop [pool handler {:keys [logger] :or {logger (logging/->DefaultLogger)} :as opts}]
+(defn- -create-stop [pool handler {:keys [logger id] :or {logger (logging/->DefaultLogger)} :as opts}]
   (let [stop (-start-job pool handler opts)]
     (fn
       ([]
-       (logging/log-info! logger "Stopping job")
+       (logging/log-info! logger (str "Stopping job-id '" id "'..."))
        (at/stop stop)) ;; Log message before stopping the job
 
       ([kill?]
        (if kill?
-         (do (logging/log-info! logger "Killing job")
+         (do (logging/log-info! logger (str "Killing job-id '" id "'..."))
              (at/kill at/kill stop)) ;; Log message before killing the job
-         (do (logging/log-info! logger "Stopping job")
+         (do (logging/log-info! logger (str "Stopping job-id '" id "'..."))
              (at/stop stop))))))) ;; Log message before stopping the job
 
 (defn- -stop! [*jobs job-id kill?]
@@ -52,19 +61,23 @@
     (swap! *jobs dissoc job-id)))
 
 (defn- -handle-with-retries
-  ([job]
-   (-handle-with-retries job 0))
+  ([opts job]
+   (-handle-with-retries opts job 0))
 
-  ([job tries]
+  ([{:keys [logger id] :or {logger (logging/->DefaultLogger)}} job tries]
    (let [handler (:handler job)
-         max-retries (:max-retries job)
+         max-retries (or (:max-retries job) 0)
+         _ (logging/log-info! logger (str "Attempting to run job-id '" id "': attempt " (inc tries) " of " (inc max-retries) "..."))
          event (handler job)]
-     (if (and (< tries (or max-retries 0))
+     (if (and (< tries max-retries)
               (= event :fail))
-       (-handle-with-retries job
-                             (inc tries))
-
-       (assoc job :event (or event :success)))))) ;; if event is nil then we default to success
+       (do
+         (logging/log-error! logger (str "Attempt " (inc tries) " of " (inc max-retries) " running job-id '" id "' failed."))
+         (-handle-with-retries job
+                               (inc tries)))
+       (do
+         (logging/log-info! logger (str "Attempt " (inc tries) " of " (inc max-retries) " running job-id '" id "' succeeded."))
+         (assoc job :event (or event :success))))))) ;; if event is nil then we default to success
 
 (defmulti -maybe-deregister (fn [job] (:recurring? job)))
 
@@ -99,24 +112,24 @@
   (when (some? job)
     (dissoc job :event)))
 
-(defn- -run-job [job]
+(defn- -run-job [opts job]
   (->> job
-       (-handle-with-retries)
+       (-handle-with-retries opts)
        (-maybe-deregister)
        (-increase-calls)
        (-post-run-cleanup)))
 
-(defn- -wrapper [*jobs job-id]
+(defn- -wrapper [*jobs {:keys [id] :as opts}]
   (fn []
-    (->> (get-in @*jobs [job-id])
-         (-run-job)
-         (swap! *jobs assoc job-id))))
+    (->> (get-in @*jobs [id])
+         (-run-job opts)
+         (swap! *jobs assoc id))))
 
 (defn- -register! [*jobs pool {:keys [id] :as opts}]
   (when-not (some? (get-in @*jobs [id]))
     (->> (-create-stop
           pool
-          (-wrapper *jobs id)
+          (-wrapper *jobs opts)
           opts)
          (assoc opts :created-at (-get-time) :stop)
          (swap! *jobs assoc id))))
