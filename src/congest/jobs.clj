@@ -1,6 +1,5 @@
 (ns congest.jobs
-  (:require [overtone.at-at :as at]
-            [congest.operation-logging :as logging])
+  (:require [overtone.at-at :as at])
   (:import (java.text SimpleDateFormat)))
 
 (defn- -get-time []
@@ -17,8 +16,8 @@
    recurring?
     (do
       (when (some? logger)
-        (logging/log-info! logger (merge opts {:log-time (get-formatted-time)
-                                               :action "start"})))
+        (logger (merge opts {:log-time (get-formatted-time)
+                             :action "start"})))
       (at/every
        interval
        handler
@@ -28,8 +27,8 @@
 
     (do
       (when (some? logger)
-        (logging/log-info! logger (merge opts {:log-time (get-formatted-time)
-                                               :action "start"})))
+        (logger (merge opts {:log-time (get-formatted-time)
+                             :action "start"})))
       (at/after interval handler pool))))
 
 (defn- -create-stop [pool handler {:keys [logger] :as opts}]
@@ -38,16 +37,16 @@
     (fn
       ([]
        (when (some? logger)
-         (logging/log-info! logger (merge extended-opts {:action "stop"})))
+         (logger (merge extended-opts {:action "stop"})))
        (at/stop stop)) ;; Log message before stopping the job
 
       ([kill?]
        (if kill?
          (do (when (some? logger)
-               (logging/log-info! logger (merge extended-opts {:action "kill"})))
+               (logger (merge extended-opts {:action "kill"})))
              (at/kill at/kill stop)) ;; Log message before killing the job
          (do (when (some? logger)
-               (logging/log-info! logger (merge extended-opts {:action "stop"})))
+               (logger (merge extended-opts {:action "stop"})))
              (at/stop stop))))))) ;; Log message before stopping the job
 
 (defn- -stop! [*jobs job-id kill?]
@@ -75,21 +74,21 @@
                                     :action "run"
                                     :tries tries
                                     :max-retries max-retries})
-         _ (logging/log-info! logger extended-opts)
+         _ (logger extended-opts)
          event (handler job)]
      (if (and (< tries max-retries)
               (> max-retries 0)
               (= event :fail))
        (do
-         (logging/log-error! logger (merge extended-opts {:event :fail}))
+         (logger (merge extended-opts {:event :fail}))
          (-handle-with-retries opts job
                                (inc tries)))
        (if (= event :fail)
          (do
-           (logging/log-error! logger (merge extended-opts {:event :fail}))
+           (logger (merge extended-opts {:event :fail}))
            (assoc job :event :fail))
          (do
-           (logging/log-info! logger (merge extended-opts {:event :success}))
+           (logger (merge extended-opts {:event :success}))
            (assoc job :event (or event :success)))))))) ;; if event is nil then we default to success
 
 (defmulti -maybe-deregister (fn [job] (:recurring? job)))
@@ -141,8 +140,8 @@
 (defn- -register! [*jobs pool {:keys [logger id] :as opts}]
   (when-not (some? (get-in @*jobs [id]))
     (when (some? logger)
-      (logging/log-info! logger (merge opts {:log-time (get-formatted-time)
-                                             :action "register"})))
+      (logger (merge opts {:log-time (get-formatted-time)
+                           :action "register"})))
     (->> (-create-stop
           pool
           (-wrapper *jobs opts)
@@ -195,6 +194,7 @@
                         :recurring? true
                         :created-at nil
                         :handler (fn [metadata] (println "RUN") :fail)
+                        :logger (fn [opts] (println opts))
                         :sleep false}])
 
   (def js (create-job-service initial-data-2))
