@@ -1,16 +1,5 @@
-(ns congest.operation-logging
-  (:require [congest.jobs :refer [get-formatted-time]]))
+(ns congest.operation-logging)
 
 (defprotocol Logger
-  (log! [this level message])
-  (log-info! [this message])
-  (log-error! [this message]))
-
-(defrecord DefaultLogger []
-  Logger
-  (log! [_ level message]
-    (println (str "[" (get-formatted-time) "] [" level "] " message)))
-  (log-info! [_ message]
-    (println (str "[" (get-formatted-time) "] [INFO] " message)))
-  (log-error! [_ message]
-    (println (str "[" (get-formatted-time) "] [ERROR] " message))))
+  (log-info! [this opts])
+  (log-error! [this opts]))
