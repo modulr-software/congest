@@ -2,17 +2,33 @@
   (:require [clojure.tools.build.api :as b]
             [deps-deploy.deps-deploy :as dd]))
 
-(def lib 'com.modulr-software/congest)
+(def lib 'io.github.modulr-software/congest)
 (def version "0.1.0")
 (def class-dir "target/classes")
 (def basis (b/create-basis {:project "deps.edn"}))
 (def jar-file (format "target/%s-%s.jar" (name lib) version))
+
+(def pom-template
+  [[:description "Clojure Job Scheduler"]
+   [:licenses
+    [:license
+     [:name "MIT"]
+     [:url "https://opensource.org/license/mit"]]]
+   [:developers
+    [:developer
+     [:name "Modulr-Software"]]]])
 
 (defn clean [_]
   (b/delete {:path "target"}))
 
 (defn jar [_]
   (clean nil)
+  (b/write-pom {:class-dir class-dir
+                :lib lib
+                :version version
+                :basis basis
+                :src-dirs ["src"]
+                :pom-data pom-template})
   (b/copy-dir {:src-dirs ["src"]
                :target-dir class-dir})
   (b/jar {:class-dir class-dir
@@ -29,8 +45,6 @@
               :class-dir class-dir}))
 
 (defn deploy [_]
-  (dd/deploy {:artifact jar-file
-              :pom-file "pom.xml"
-              :repo "clojars"
-              :username (System/getenv "CLOJARS_USERNAME")
-              :password (System/getenv "CLOJARS_PASSWORD")}))
+  (dd/deploy {:installer :remote
+              :artifact jar-file
+              :pom-file (b/pom-path {:lib lib :class-dir class-dir})}))
