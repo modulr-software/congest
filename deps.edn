@@ -16,6 +16,6 @@
   {:exec-args   {:watch?     true
                  :skip-meta  :slow
                  :fail-fast? true}}
-  :build {:deps {io.github.clojure/tools.build {:git/tag "v0.10.9" :git/sha "e405aac"}}
-          :ns-default build
-          :exec-fn build/jar}}}
+  :build {:deps {io.github.clojure/tools.build {:git/tag "v0.10.9" :git/sha "e405aac"}
+                 slipset/deps-deploy {:mvn/version "0.2.2"}}
+          :ns-default build}}}
