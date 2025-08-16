@@ -69,7 +69,6 @@
                                     :action "run"
                                     :tries tries
                                     :max-retries max-retries})
-         _ (logger extended-opts)
          event (handler job)]
      (if (and (< tries max-retries)
               (> max-retries 0)
@@ -88,11 +87,11 @@
 
 (defmulti -maybe-deregister (fn [job] (:recurring? job)))
 
-(defmethod -maybe-deregister true [{:keys [stop-after-fail?
+(defmethod -maybe-deregister true [{:keys [stop-after-fail
                                            stop
                                            kill-after] :as job}]
   (cond (= (:event job) :fail)
-        (if (and (some? stop-after-fail?) (not stop-after-fail?))
+        (if (and (some? stop-after-fail) (not stop-after-fail))
           (assoc job :num-fails (inc (or (:num-fails job) 0)))
 
           (do
@@ -133,10 +132,10 @@
          (swap! *jobs assoc id))))
 
 (defn- -register! [*jobs pool {:keys [logger id] :as opts}]
+  (when (some? logger)
+    (logger (merge opts {:log-time (-get-time)
+                         :action "register"})))
   (when-not (some? (get-in @*jobs [id]))
-    (when (some? logger)
-      (logger (merge opts {:log-time (-get-time)
-                           :action "register"})))
     (->> (-create-stop
           pool
           (-wrapper *jobs opts)
@@ -181,13 +180,13 @@
                         :auto-start true
                         :stop-after-fail false,
                         :id "test"
-                        :kill-after 1
-                        :num-calls nil
+                        ;:kill-after 1
+                        ;:num-calls nil
                         :interval 1000
                         :recurring? true
                         :created-at nil
                         :handler (fn [metadata] (println "RUN") :fail)
-                        :logger (fn [opts] (println opts))
+                        :logger (fn [opts] (println (:action opts)))
                         :sleep false}])
 
   (def js (create-job-service initial-data-2))
