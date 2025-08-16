@@ -1,13 +1,8 @@
 (ns congest.jobs
-  (:require [overtone.at-at :as at])
-  (:import (java.text SimpleDateFormat)))
+  (:require [overtone.at-at :as at]))
 
 (defn- -get-time []
   (.getTime (new java.util.Date)))
-
-(defn get-formatted-time []
-  (let [formatter (SimpleDateFormat. "yyyy-MM-dd HH:mm:ss")]
-    (.format formatter (-get-time))))
 
 (defn- -start-job
   [pool handler {:keys [logger recurring? interval initial-delay] :as opts}]
@@ -16,7 +11,7 @@
    recurring?
     (do
       (when (some? logger)
-        (logger (merge opts {:log-time (get-formatted-time)
+        (logger (merge opts {:log-time (-get-time)
                              :action "start"})))
       (at/every
        interval
@@ -27,12 +22,12 @@
 
     (do
       (when (some? logger)
-        (logger (merge opts {:log-time (get-formatted-time)
+        (logger (merge opts {:log-time (-get-time)
                              :action "start"})))
       (at/after interval handler pool))))
 
 (defn- -create-stop [pool handler {:keys [logger] :as opts}]
-  (let [extended-opts (merge opts {:log-time (get-formatted-time)})
+  (let [extended-opts (merge opts {:log-time (-get-time)})
         stop (-start-job pool handler opts)]
     (fn
       ([]
@@ -70,7 +65,7 @@
   ([{:keys [logger] :as opts} job tries]
    (let [handler (:handler job)
          max-retries (or (:max-retries job) 0)
-         extended-opts (merge opts {:log-time (get-formatted-time)
+         extended-opts (merge opts {:log-time (-get-time)
                                     :action "run"
                                     :tries tries
                                     :max-retries max-retries})
@@ -140,7 +135,7 @@
 (defn- -register! [*jobs pool {:keys [logger id] :as opts}]
   (when-not (some? (get-in @*jobs [id]))
     (when (some? logger)
-      (logger (merge opts {:log-time (get-formatted-time)
+      (logger (merge opts {:log-time (-get-time)
                            :action "register"})))
     (->> (-create-stop
           pool
@@ -181,8 +176,6 @@
         (at/stop-and-reset-pool! job-pool :strategy :kill)))))
 
 (comment
-  (get-formatted-time)
-
   (def initial-data-1 [])
   (def initial-data-2 [{:initial-delay 10
                         :auto-start true
