@@ -39,7 +39,7 @@
        (if kill?
          (do (when (some? logger)
                (logger (merge extended-opts {:action "kill"})))
-             (at/kill at/kill stop)) ;; Log message before killing the job
+             (at/kill stop)) ;; Log message before killing the job
          (do (when (some? logger)
                (logger (merge extended-opts {:action "stop"})))
              (at/stop stop))))))) ;; Log message before stopping the job
@@ -185,9 +185,12 @@
                         :interval 1000
                         :recurring? true
                         :created-at nil
-                        :handler (fn [metadata] (println "RUN") :fail)
+                        :handler (fn [metadata] (println "RUN"))
                         :logger (fn [opts] (println (:action opts)))
                         :sleep false}])
 
   (def js (create-job-service initial-data-2))
-  (stop! js "test" false))
+  (deregister! js "test")
+  (stop! js "test" true)
+
+  ())
