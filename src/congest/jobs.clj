@@ -53,10 +53,13 @@
       (stop false))))
 
 (defn- -deregister! [*jobs job-id]
-  (when
-   (some? (get-in @*jobs [job-id]))
-    (-stop! *jobs job-id true)
-    (swap! *jobs dissoc job-id)))
+  (let [{:keys [logger] :as opts} (get-in @*jobs [job-id])]
+    (when (some? opts)
+      (when (some? logger)
+        (logger (merge opts {:log-time (-get-time)
+                             :action "deregister"})))
+      (-stop! *jobs job-id true)
+      (swap! *jobs dissoc job-id))))
 
 (defn- -handle-with-retries
   ([opts job]
