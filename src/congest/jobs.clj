@@ -62,13 +62,13 @@
       (swap! *jobs dissoc job-id))))
 
 (defn- -handle-with-retries
-  ([opts job]
-   (-handle-with-retries opts job 0))
+  ([job]
+   (-handle-with-retries job 0))
 
-  ([{:keys [logger] :as opts} job tries]
+  ([{:keys [logger] :as job} tries]
    (let [handler (:handler job)
          max-retries (or (:max-retries job) 0)
-         extended-opts (merge opts {:log-time (-get-time)
+         extended-opts (merge job {:log-time (-get-time)
                                     :action "run"
                                     :tries tries
                                     :max-retries max-retries})
@@ -78,7 +78,7 @@
               (= event :fail))
        (do
          (logger (merge extended-opts {:event :fail}))
-         (-handle-with-retries opts job
+         (-handle-with-retries job
                                (inc tries)))
        (if (= event :fail)
          (do
@@ -121,9 +121,9 @@
   (when (some? job)
     (dissoc job :event)))
 
-(defn- -run-job [opts job]
+(defn- -run-job [job]
   (->> job
-       (-handle-with-retries opts)
+       (-handle-with-retries)
        (-maybe-deregister)
        (-increase-calls)
        (-post-run-cleanup)))
@@ -131,7 +131,7 @@
 (defn- -wrapper [*jobs {:keys [id] :as opts}]
   (fn []
     (->> (get-in @*jobs [id])
-         (-run-job opts)
+         (-run-job)
          (swap! *jobs assoc id))))
 
 (defn- -register! [*jobs pool {:keys [logger id] :as opts}]
@@ -183,13 +183,13 @@
                         :auto-start true
                         :stop-after-fail false,
                         :id "test"
-                        ;:kill-after 1
-                        ;:num-calls nil
+                        :kill-after 5
+                        :num-calls 0
                         :interval 1000
                         :recurring? true
                         :created-at nil
                         :handler (fn [metadata] (println "RUN"))
-                        :logger (fn [opts] (println (:action opts)))
+                        :logger (fn [opts] (println opts))
                         :sleep false}])
 
   (def js (create-job-service initial-data-2))
