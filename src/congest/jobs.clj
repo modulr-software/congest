@@ -69,23 +69,26 @@
    (let [handler (:handler job)
          max-retries (or (:max-retries job) 0)
          extended-opts (merge job {:log-time (-get-time)
-                                    :action "run"
-                                    :tries tries
-                                    :max-retries max-retries})
+                                   :action "run"
+                                   :tries tries
+                                   :max-retries max-retries})
          event (handler job)]
      (if (and (< tries max-retries)
               (> max-retries 0)
               (= event :fail))
        (do
-         (logger (merge extended-opts {:event :fail}))
+         (when (some? logger)
+           (logger (merge extended-opts {:event :fail})))
          (-handle-with-retries job
                                (inc tries)))
        (if (= event :fail)
          (do
-           (logger (merge extended-opts {:event :fail}))
+           (when (some? logger)
+             (logger (merge extended-opts {:event :fail})))
            (assoc job :event :fail))
          (do
-           (logger (merge extended-opts {:event :success}))
+           (when (some? logger) 
+             (logger (merge extended-opts {:event :success})))
            (assoc job :event (or event :success)))))))) ;; if event is nil then we default to success
 
 (defmulti -maybe-deregister (fn [job] (:recurring? job)))
