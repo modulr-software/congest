@@ -14,3 +14,4 @@ dev/dev.clj
 .clj-kondo/
 .lsp/
 nrepl.sh
+.env

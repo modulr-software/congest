@@ -37,6 +37,15 @@ Mark your work-in-progress PR's with ```WIP``` in the PR title.
 
 Every PR needs a proper description. Please link the issue you are adressing and explain how the PR goes about fixing the issue / adding the required feature.
 
+## Deployment
+
+In order to build a jar for Congest, run `clojure -T:build jar`. 
+This will create a `/target` directory with a jar, pom and all the necessary files for deployment.
+
+To delete the `/target` folder, run `clojure -T:build clean`.
+
+Finally, to deploy to clojars, run `env CLOJARS_USERNAME=clojars-username CLOJARS_PASSWORD=clojars-deploy-token clojure -T:build deploy`.
+
 ## Thats all folks!
 
 # HAPPY HACKING!!!!
