@@ -87,7 +87,7 @@
              (logger (merge extended-opts {:event :fail})))
            (assoc job :event :fail))
          (do
-           (when (some? logger) 
+           (when (some? logger)
              (logger (merge extended-opts {:event :success})))
            (assoc job :event (or event :success)))))))) ;; if event is nil then we default to success
 
@@ -163,7 +163,8 @@
   (register! [this opts])
   (deregister! [this job-id])
   (stop! [this job-id kill?])
-  (kill! [this]))
+  (kill! [this])
+  (view [this]))
 
 (defn create-job-service [initial-data]
   (let [*jobs (atom {})
@@ -178,7 +179,9 @@
       (stop! [_ job-id kill?]
         (-stop! *jobs job-id kill?))
       (kill! [_]
-        (at/stop-and-reset-pool! job-pool :strategy :kill)))))
+        (at/stop-and-reset-pool! job-pool :strategy :kill))
+      (view [_]
+        @*jobs))))
 
 (comment
   (def initial-data-1 [])
@@ -186,9 +189,9 @@
                         :auto-start true
                         :stop-after-fail false,
                         :id "test"
-                        :kill-after 5
+                        ;:kill-after 5
                         :num-calls 0
-                        :interval 1000
+                        :interval 60000
                         :recurring? true
                         :created-at nil
                         :handler (fn [metadata] (println "RUN"))
@@ -196,6 +199,7 @@
                         :sleep false}])
 
   (def js (create-job-service initial-data-2))
+  (view js)
   (deregister! js "test")
   (stop! js "test" true)
 
